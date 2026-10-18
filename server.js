@@ -7,7 +7,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const BOT_TOKEN = process.env.BOT_TOKEN || '';
+
+// Kutilmagan xato server o'chib qolishiga (502) sabab bo'lmasin, Render Logs'da ko'rinsin
+process.on('uncaughtException', (e) => console.error('Xato:', e));
+process.on('unhandledRejection', (e) => console.error('Xato:', e));
 const CHANNEL = (process.env.CHANNEL || 'dragon_pcode').replace(/^@/, '');
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map((x) => x.trim()).filter(Boolean);
 const PUBLIC_URL = (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
@@ -18,7 +22,7 @@ const DB_KEY = 'dragon_db';
 const DB_FILE = path.join(__dirname, 'data.json');
 const MAX_DB_BYTES = 900000; // Upstash bepul tarifida bitta qiymat 1 MB gacha
 
-if (!BOT_TOKEN) { console.error('BOT_TOKEN kiritilmagan'); process.exit(1); }
+if (!BOT_TOKEN) console.error('DIQQAT: BOT_TOKEN kiritilmagan. Render → Environment bo‘limiga BOT_TOKEN ni qo‘shing. Bot funksiyalari ishlamaydi.');
 const WEBHOOK_SECRET = crypto.createHash('sha256').update('wh:' + BOT_TOKEN).digest('hex').slice(0, 32);
 
 /* ---------- Ombor: Upstash Redis (bepul) yoki fayl ---------- */
@@ -63,6 +67,7 @@ function saveDb() {
 
 /* ---------- Telegram ---------- */
 async function tg(method, params = {}) {
+  if (!BOT_TOKEN) return { ok: false, description: 'BOT_TOKEN yo‘q' };
   const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params),
   });
@@ -75,7 +80,7 @@ async function isMember(channel, userId) {
   return s === 'creator' || s === 'administrator' || s === 'member' || (s === 'restricted' && r.result.is_member);
 }
 function checkInitData(initData) {
-  if (!initData) return null;
+  if (!BOT_TOKEN || !initData) return null;
   const params = new URLSearchParams(initData);
   const hash = params.get('hash');
   if (!hash) return null;
@@ -146,7 +151,8 @@ function pruneLots() {
 const minNext = (a) => (a.bidderId ? a.bid + Math.max(10, Math.ceil(a.bid * 0.05)) : a.start);
 
 /* ---------- HTTP ---------- */
-const INDEX = path.join(__dirname, 'public', 'index.html');
+// index.html public/ ichida yoki (telefondan yuklanganda) to'g'ridan-to'g'ri asosiy papkada bo'lishi mumkin
+const INDEX_FILES = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')];
 function send(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(obj));
@@ -164,8 +170,14 @@ http.createServer(async (req, res) => {
   const url = req.url.split('?')[0];
   try {
     if (req.method === 'GET' && (url === '/' || url === '/index.html')) {
+      const file = INDEX_FILES.find((f) => fs.existsSync(f));
+      if (!file) {
+        console.error('index.html topilmadi. GitHub repoda public/index.html bo‘lishi kerak.');
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('index.html topilmadi. GitHub repoga public/index.html faylini yuklang.');
+      }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-      return fs.createReadStream(INDEX).pipe(res);
+      return res.end(fs.readFileSync(file));
     }
     if (url === '/health') return send(res, 200, { ok: true });
 
@@ -275,7 +287,7 @@ http.createServer(async (req, res) => {
     }
     send(res, 404, { ok: false });
   } catch (e) { console.error(e); send(res, 500, { ok: false }); }
-}).listen(PORT, async () => {
+}).listen(PORT, '0.0.0.0', async () => {
   await loadDb();
   console.log('Server', PORT, '| kanal @' + CHANNEL);
   if (PUBLIC_URL) {
