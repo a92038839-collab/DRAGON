@@ -1,0 +1,8 @@
+{
+  "name": "dragon-coin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dragon Coin Telegram Mini App: sahifa + kanal promokodlari + umumiy vazifa va auksionlar",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}
