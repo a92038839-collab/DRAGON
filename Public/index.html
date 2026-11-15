@@ -172,7 +172,7 @@ const chanOf = (link) => { const m=String(link).match(/t\.me\/(?:s\/)?@?([A-Za-z
    Haqiqiy botga chiqarishdan oldin uni false qiling. */
 const ADMIN_TG_IDS = [];
 const DEMO_ADMIN = false;
-let serverAdmin = false;
+let serverAdmin = false, adminsCount = null;
 const isAdmin = () => API_URL ? serverAdmin : (tgUser ? ADMIN_TG_IDS.includes(tgUser.id) : DEMO_ADMIN);
 /* Do'kon darajalari: cap = kunlik coin limiti, m = bosish ko'paytirgichi, p = narx (olmos) */
 const LEVELS = [
@@ -236,7 +236,7 @@ function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
 S=load();
 function fix(){
   S.set=S.set||{haptic:true}; S.cfg=S.cfg||{bot:'dragon_coin_bot'};
-  S.promos=S.promos||[{code:'DRAGON500',amount:500,cur:'coin'}]; S.u.promoDone=S.u.promoDone||{}; S.u.bids=S.u.bids||{}; S.u.settled=S.u.settled||{};
+  S.promos=S.promos||[{code:'DRAGON500',amount:500,cur:'coin'}]; S.u.promoDone=S.u.promoDone||{}; S.u.bids=S.u.bids||{}; S.u.settled=S.u.settled||{}; S.u.adjDone=S.u.adjDone||{};
   if(S.set.sound===undefined) S.set.sound=true;
   const t3=S.tasks.find(t=>t.id==='t3');
   if(t3&&t3.link==='https://telegram.org'){ t3.type='bot'; t3.title='Xamster botiga start bosing'; t3.link='https://t.me/Xamster_uzb_bot'; }
@@ -293,7 +293,7 @@ function claimDaily(){
 
 /* ---------- Navigatsiya ---------- */
 const TABS=[['tap','Bosish','tap'],['auction','Auksion','auction'],['tasks','Vazifalar','tasks'],['boost','Boost','boost'],['profile','Profil','user']];
-let tab='tap', adminOK=false, adminTab='bal', pendingImg='';
+let tab='tap', adminOK=false, adminTab='bal';
 const nav=document.getElementById('nav'), view=document.getElementById('view');
 function renderNav(){
   nav.innerHTML=TABS.map(([k,l,i])=>`<button data-tab="${k}" aria-current="${tab===k}">${ico(i)}<span>${l}</span></button>`).join('');
@@ -352,24 +352,17 @@ function onTap(e){
 /* ---------- Foydalanuvchi lotlari ---------- */
 const myId = () => tgUser ? String(tgUser.id) : 'local';
 const isMine = (a) => !!a.sellerId && String(a.sellerId)===myId();
-let lotOpen=false, lotImg='';
+let lotOpen=false;
 function lotCard(){
   if(!lotOpen) return `<button class="btn ghost block" data-act="lotToggle" style="margin-bottom:12px">O‘z lotimni qo‘yish</button>`;
   return `<form class="card form" id="lot-form"><div class="between"><h3>Yangi lot</h3><button type="button" class="btn ghost" data-act="lotToggle">Yopish</button></div>
     <label for="l-name">Nomi<input id="l-name" maxlength="60" required placeholder="Masalan: PUBG akkaunt"></label>
-    <label for="l-file">Rasm<input id="l-file" type="file" accept="image/*"></label>
-    <img id="l-prev" class="prev" alt="" hidden>
     <div class="grid2">
       <label for="l-hours">Muddat<select id="l-hours"><option value="1">1 soat</option><option value="6">6 soat</option><option value="24" selected>1 kun</option><option value="72">3 kun</option><option value="168">7 kun</option></select></label>
       <label for="l-start">Boshlang‘ich narx<input id="l-start" type="number" inputmode="numeric" min="1" value="100" required></label>
     </div>
     <div class="muted">Lot sotilsa, yetakchi taklif miqdori coin bo‘lib sizga o‘tadi. Bir vaqtda 3 tagacha lot qo‘ya olasiz.</div>
     <div class="err" id="l-err"></div><button class="btn block" type="submit">Lotni qo‘yish</button></form>`;
-}
-function pickImage(file,cb){
-  const r=new FileReader();
-  r.onload=()=>{ const im=new Image(); im.onload=()=>{ const k=Math.min(1,420/im.width), c=document.createElement('canvas'); c.width=Math.round(im.width*k); c.height=Math.round(im.height*k); c.getContext('2d').drawImage(im,0,0,c.width,c.height); cb(c.toDataURL('image/jpeg',.7)); }; im.src=r.result; };
-  r.readAsDataURL(file);
 }
 async function createLot(){
   const err=document.getElementById('l-err');
@@ -378,14 +371,14 @@ async function createLot(){
   if(!(start>=1&&start<=1e9)){ err.textContent='Narx 1 dan 1 000 000 000 gacha bo‘lsin'; return; }
   const active=S.auctions.filter(a=>isMine(a)&&a.endsAt>Date.now()).length;
   if(active>=3){ err.textContent='Bir vaqtda 3 tadan ko‘p lot qo‘ya olmaysiz'; return; }
-  const img=lotImg||art(name);
+  const img=art(name);
   if(API_URL){
     try{ const r=await api('/api/lots',{initData:initData(),name,img,hours,start}); if(!r.ok){ err.textContent=r.error||'Lot qabul qilinmadi'; return; } await syncDown(true); }
     catch(e){ err.textContent='Server bilan aloqa yo‘q'; return; }
   } else {
     S.auctions.push({id:uid(),name,img,endsAt:Date.now()+hours*3600e3,start,bid:0,bidder:null,sellerId:myId(),seller:userName()}); save();
   }
-  lotOpen=false; lotImg=''; toast('Lot qo‘yildi'); render();
+  lotOpen=false; toast('Lot qo‘yildi'); render();
 }
 async function cancelLot(id){
   if(API_URL){
@@ -514,6 +507,7 @@ async function loadPromos(){
 }
 async function fillPromos(){
   const box=document.getElementById('promo-list'); if(!box) return;
+  if(API_URL){ box.innerHTML='<div class="muted">Kodlar <a href="https://t.me/'+CHANNEL+'" target="_blank" rel="noopener" style="color:var(--gold)">@'+CHANNEL+'</a> kanaliga rasm bo‘lib tushadi. Kodni birinchi yozgan oladi.</div>'; return; }
   const list=await loadPromos(); const b2=document.getElementById('promo-list'); if(!b2) return;
   if(list===null){ b2.innerHTML='<div class="muted">Server bilan aloqa yo‘q</div>'; return; }
   const open=list.filter(x=>!S.u.promoDone[x.code]);
@@ -577,7 +571,7 @@ function rProfile(){
       <button class="btn ghost" data-act="toggleHaptic">Tebranish: ${S.set.haptic?'yoqilgan':'o‘chirilgan'}</button>
       <button class="btn ghost" data-act="toggleSound">Ovoz: ${S.set.sound?'yoqilgan':'o‘chirilgan'}</button>
     </div>
-    ${isAdmin()?`<button class="btn ghost block" data-act="adminIn">Admin panel</button>${(!API_URL&&!tgUser)?'<div class="muted" style="margin-top:8px">Sinov rejimi: Telegramdan tashqarida admin panel hammaga ochiq. Haqiqiy botda yopiladi.</div>':''}`:''}`;
+    ${isAdmin()?`<button class="btn ghost block" data-act="adminIn">Admin panel</button>${(!API_URL&&!tgUser)?'<div class="muted" style="margin-top:8px">Sinov rejimi: Telegramdan tashqarida admin panel hammaga ochiq. Haqiqiy botda yopiladi.</div>':''}`:(API_URL?(!tgUser?'<div class="muted">Admin panel faqat Telegram ichida, admin akkauntida ochiladi.</div>':(adminsCount===0?'<div class="muted">Admin hali belgilanmagan. Render’da <b>ADMIN_IDS</b> ga yuqoridagi Telegram ID ingizni yozing.</div>':'')):'')}`;
     return;
   }
   const tabs=[['bal','Balans'],['auction','Auksion'],['task','Vazifa'],['promo','Promo'],['cfg','Sozlama']];
@@ -591,8 +585,6 @@ function adminAuction(){
   const el=document.getElementById('admin-body');
   el.innerHTML=`<form class="card form" id="af"><h3>Auksion qo‘shish</h3>
     <label for="a-name">Nomi<input id="a-name" maxlength="60" required placeholder="Masalan: Qizil ajdaho"></label>
-    <label for="a-file">Rasm<input id="a-file" type="file" accept="image/*"></label>
-    <img id="a-prev" class="prev" alt="" hidden>
     <div class="grid2">
       <label for="a-end">Tugash vaqti<input id="a-end" type="datetime-local" required value="${inDays(24)}"></label>
       <label for="a-start">Boshlang‘ich narx<input id="a-start" type="number" min="1" value="100" required></label>
@@ -601,17 +593,6 @@ function adminAuction(){
     <button class="btn block" type="submit">Qo‘shish</button></form>
     <h3 style="margin:16px 0 10px">Mavjud auksionlar (${S.auctions.length})</h3>
     ${S.auctions.map(a=>`<div class="card task"><img src="${esc(a.img)}" alt="" style="width:56px;height:56px;border-radius:10px;object-fit:cover"><div class="body"><h3>${esc(a.name)}</h3><div class="muted">${new Date(a.endsAt).toLocaleString('uz-UZ')}</div></div><button class="btn danger" data-act="delAuction" data-id="${a.id}">O‘chirish</button></div>`).join('')||'<div class="empty">Bo‘sh</div>'}`;
-  pendingImg='';
-  document.getElementById('a-file').addEventListener('change',e=>{
-    const f=e.target.files[0]; if(!f) return;
-    const r=new FileReader();
-    r.onload=()=>{ const im=new Image(); im.onload=()=>{
-      const w=480, k=Math.min(1,w/im.width), c=document.createElement('canvas'); c.width=Math.round(im.width*k); c.height=Math.round(im.height*k);
-      c.getContext('2d').drawImage(im,0,0,c.width,c.height); pendingImg=c.toDataURL('image/jpeg',.75);
-      const p=document.getElementById('a-prev'); p.src=pendingImg; p.hidden=false; };
-      im.src=r.result; };
-    r.readAsDataURL(f);
-  });
   document.getElementById('af').addEventListener('submit',e=>{
     e.preventDefault();
     const name=document.getElementById('a-name').value.trim();
@@ -621,7 +602,7 @@ function adminAuction(){
     if(!name){ err.textContent='Nom kiriting'; return; }
     if(!(end>Date.now())){ err.textContent='Tugash vaqti kelajakda bo‘lishi kerak'; return; }
     if(!(start>=1)){ err.textContent='Narx 1 dan kam bo‘lmasin'; return; }
-    S.auctions.push({id:uid(),name,img:pendingImg||art(name),endsAt:end,start,bid:0,bidder:null});
+    S.auctions.push({id:uid(),name,img:art(name),endsAt:end,start,bid:0,bidder:null});
     save(); pushContent(); toast('Auksion qo‘shildi'); render();
   });
 }
@@ -650,6 +631,53 @@ function adminTask(){
     save(); pushContent(); toast('Vazifa qo‘shildi'); render();
   });
 }
+/* ---------- Admin: boshqa foydalanuvchining balansi ---------- */
+let adjTarget=null;
+function userAdjCard(){
+  return `<form class="card form" id="uf"><h3>Foydalanuvchiga coin yoki olmos</h3>
+    <div class="muted">Telegram ID raqamini, @username yoki ismini yozing. Foydalanuvchi botni kamida bir marta ochgan bo‘lsa qidiruvda chiqadi.</div>
+    <div class="bidrow"><input id="u-q" placeholder="ID yoki @username yoki ism" autocomplete="off" aria-label="Foydalanuvchi qidirish"><button type="button" class="btn ghost" data-act="userFind">Qidirish</button></div>
+    <div id="u-res"></div>
+    <div class="muted" id="u-sel">${adjTarget?'Tanlangan: <b>'+esc(adjTarget.name)+'</b> ('+esc(adjTarget.id)+')':'Hech kim tanlanmagan'}</div>
+    <label for="u-mode">Amal<select id="u-mode"><option value="give">Berish</option><option value="take">Olish</option></select></label>
+    <div class="grid2">
+      <label for="u-coin">Coin<input id="u-coin" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
+      <label for="u-gem">Olmos<input id="u-gem" type="number" inputmode="numeric" min="0" step="1" placeholder="0"></label>
+    </div>
+    <div class="err" id="u-err"></div>
+    <button class="btn block" type="submit">Yuborish</button>
+    <div id="u-log"></div></form>`;
+}
+function setSel(){ const el=document.getElementById('u-sel'); if(el) el.innerHTML=adjTarget?'Tanlangan: <b>'+esc(adjTarget.name)+'</b> ('+esc(adjTarget.id)+')':'Hech kim tanlanmagan'; }
+async function findUsers(){
+  const q=(document.getElementById('u-q').value||'').trim(), res=document.getElementById('u-res');
+  if(!q){ res.innerHTML='<div class="muted">Qidiruv so‘zini yozing</div>'; return; }
+  if(/^\d{4,15}$/.test(q)){ adjTarget={id:q,name:'ID '+q}; setSel(); res.innerHTML=''; return; }
+  try{
+    const r=await api('/api/admin/users',{initData:initData(),q});
+    if(!r.ok){ res.innerHTML='<div class="err">'+esc(r.error||'Xato')+'</div>'; return; }
+    res.innerHTML=r.users.length?r.users.map(u=>`<div class="between" style="margin-top:6px"><span>${esc(u.name)}${u.username?' <span class="muted">@'+esc(u.username)+'</span>':''} <span class="muted">${esc(u.id)}</span></span><button type="button" class="btn ghost" data-act="userPick" data-id="${esc(u.id)}" data-name="${esc(u.name)}">Tanlash</button></div>`).join(''):'<div class="muted">Topilmadi. Aniq Telegram ID raqamini yozib ko‘ring.</div>';
+  }catch(e){ res.innerHTML='<div class="err">Server bilan aloqa yo‘q</div>'; }
+}
+async function loadAdjLog(){
+  try{
+    const r=await api('/api/admin/users',{initData:initData(),q:''}); const box=document.getElementById('u-log'); if(!box||!r.ok) return;
+    box.innerHTML=r.log.length?'<div class="muted" style="margin:8px 0 4px">Oxirgi amallar</div>'+r.log.map(l=>`<div class="muted">${new Date(l.at).toLocaleString('uz-UZ')} &middot; ${esc(l.to)} &middot; ${l.c?(l.c>0?'+':'')+fmt(l.c)+' coin ':''}${l.g?(l.g>0?'+':'')+fmt(l.g)+' olmos':''}</div>`).join(''):'';
+  }catch(e){}
+}
+async function applyUserAdj(){
+  const err=document.getElementById('u-err'); err.textContent='';
+  if(!adjTarget){ err.textContent='Avval foydalanuvchini tanlang'; return; }
+  const read=(id)=>{ const v=document.getElementById(id).value.trim(); if(v==='') return 0; const n=Math.floor(Number(v)); return (isFinite(n)&&n>=0&&n<=1e12)?n:NaN; };
+  const coin=read('u-coin'), gem=read('u-gem');
+  if(Number.isNaN(coin)||Number.isNaN(gem)){ err.textContent='Miqdor 0 dan 1 000 000 000 000 gacha butun son bo‘lsin'; return; }
+  if(!coin&&!gem){ err.textContent='Kamida bitta miqdor kiriting'; return; }
+  try{
+    const r=await api('/api/admin/adjust',{initData:initData(),userId:adjTarget.id,coin,gem,mode:document.getElementById('u-mode').value});
+    if(!r.ok){ err.textContent=r.error||'Yuborilmadi'; return; }
+    toast('Yuborildi. Foydalanuvchi ilovani ochganda yangilanadi'); document.getElementById('u-coin').value=''; document.getElementById('u-gem').value=''; loadAdjLog();
+  }catch(e){ err.textContent='Server bilan aloqa yo‘q'; }
+}
 function adminBal(){
   const el=document.getElementById('admin-body');
   el.innerHTML=`<div class="sum">
@@ -664,8 +692,10 @@ function adminBal(){
       </div>
       <div class="err" id="x-err"></div>
       <button class="btn block" type="submit">Qo\u2018llash</button></form>
+    ${API_URL?userAdjCard():'<div class="card"><div class="muted">Boshqa foydalanuvchilarga coin yoki olmos berish va olish Render serverida ishlaydi.</div></div>'}
     <div class="card"><h3>Ma\u2018lumotlar</h3><div class="muted">Barcha balans, vazifa va auksionlarni boshlang\u2018ich holatga qaytaradi.</div>
       <button class="btn ghost block" data-act="resetAll">Hamma ma\u2018lumotni boshiga qaytarish</button></div>`;
+  if(API_URL){ const uf=document.getElementById('uf'); if(uf) uf.addEventListener('submit',e=>{ e.preventDefault(); applyUserAdj(); }); loadAdjLog(); }
   document.getElementById('bf').addEventListener('submit',e=>{
     e.preventDefault();
     const mode=document.getElementById('x-mode').value, err=document.getElementById('x-err');
@@ -679,7 +709,43 @@ function adminBal(){
     save(); toast('Balans yangilandi'); render();
   });
 }
+async function adminPromoServer(){
+  const el=document.getElementById('admin-body');
+  el.innerHTML=`<form class="card form" id="spf"><h3>Promokod yaratish</h3>
+    <div class="muted">Kod rasm bo‘lib @${CHANNEL} kanaliga tushadi. Kod terilgach rasm ustiga X chiziladi. Bot kanalda admin bo‘lishi kerak.</div>
+    <label for="sp-code">Kod (bo‘sh qoldirsangiz o‘zi yaratiladi)<input id="sp-code" maxlength="24" autocapitalize="characters" autocomplete="off" placeholder="DRAGON500"></label>
+    <div class="grid2">
+      <label for="sp-amt">Miqdor<input id="sp-amt" type="number" min="1" value="500"></label>
+      <label for="sp-cur">Turi<select id="sp-cur"><option value="coin">Coin</option><option value="gem">Olmos</option></select></label>
+    </div>
+    <label for="sp-max">Necha kishi olishi mumkin<input id="sp-max" type="number" min="1" value="1"></label>
+    <div class="err" id="sp-err"></div>
+    <button class="btn block" type="submit" id="sp-btn">Kanalga yuborish</button></form>
+    <h3 style="margin:16px 0 10px">Kodlar</h3><div id="sp-list"><div class="muted">Yuklanmoqda...</div></div>`;
+  const load=async()=>{
+    const box=document.getElementById('sp-list'); if(!box) return;
+    try{
+      const r=await api('/api/admin/promos',{initData:initData()});
+      if(!r.ok){ box.innerHTML='<div class="err">'+esc(r.error||'Xato')+'</div>'; return; }
+      box.innerHTML=r.promos.length?r.promos.map(x=>`<div class="card task"><div class="body"><h3>${esc(x.code)}</h3>${REWARD(x)}<div class="muted">${x.used}/${x.max} ${x.used>=x.max?'ishlatilgan':'faol'}</div></div><button class="btn danger" data-act="spDel" data-id="${esc(x.code)}">O‘chirish</button></div>`).join(''):'<div class="empty">Hali kod yo‘q</div>';
+      hydrateIcons(box);
+    }catch(e){ box.innerHTML='<div class="err">Server bilan aloqa yo‘q</div>'; }
+  };
+  load();
+  document.getElementById('spf').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const err=document.getElementById('sp-err'), btn=document.getElementById('sp-btn'); err.textContent='';
+    btn.disabled=true; btn.textContent='Yuborilmoqda...';
+    try{
+      const r=await api('/api/admin/promo',{initData:initData(),code:document.getElementById('sp-code').value.trim(),amount:Number(document.getElementById('sp-amt').value),cur:document.getElementById('sp-cur').value,max:Number(document.getElementById('sp-max').value)});
+      if(!r.ok){ err.textContent=r.error||'Yuborilmadi'; }
+      else{ toast('Kanalga yuborildi: '+r.code); document.getElementById('sp-code').value=''; load(); }
+    }catch(x){ err.textContent='Server bilan aloqa yo‘q'; }
+    btn.disabled=false; btn.textContent='Kanalga yuborish';
+  });
+}
 function adminPromo(){
+  if(API_URL) return adminPromoServer();
   const el=document.getElementById('admin-body');
   el.innerHTML=`${API_URL?'<div class="card"><div class="muted">Server ulangan: kodlar @'+CHANNEL+' kanaliga <b>KOD: NOM | 500 coin</b> ko‘rinishida post yuborilganda avtomatik qo‘shiladi.</div></div>':'<div class="card"><div class="muted">Sinov rejimi: kodlarni shu yerda qo‘lda qo‘shing. Server ulangach ular kanaldan avtomatik keladi.</div></div>'}
     ${API_URL?'':`<form class="card form" id="pf"><h3>Promokod qo‘shish</h3>
@@ -720,12 +786,20 @@ function adminCfg(){
 /* ---------- Hodisalar ---------- */
 const confirmArm = {};
 view.addEventListener('submit',e=>{ if(e.target.id==='lot-form'){ e.preventDefault(); createLot(); } });
-view.addEventListener('change',e=>{ if(e.target.id==='l-file'&&e.target.files[0]) pickImage(e.target.files[0],d=>{ lotImg=d; const p=document.getElementById('l-prev'); if(p){ p.src=d; p.hidden=false; } }); });
 view.addEventListener('click',e=>{
   const at=e.target.closest('[data-atab]'); if(at){ adminTab=at.dataset.atab; render(); return; }
   const b=e.target.closest('[data-act]'); if(!b) return;
   const a=b.dataset.act, id=b.dataset.id;
   // o'chirish va to'liq reset: ikki bosishli tasdiq
+  if(a==='spDel'){
+    const k='sp'+id;
+    if(!confirmArm[k]){ confirmArm[k]=1; b.textContent='Aniqmi? Yana bosing'; setTimeout(()=>{ delete confirmArm[k]; if(b.isConnected) b.textContent='O‘chirish'; },3000); return; }
+    delete confirmArm[k];
+    api('/api/admin/promo/delete',{initData:initData(),code:id}).then(r=>{ if(!r.ok) toast(r.error||'O‘chirilmadi'); adminPromoServer(); }).catch(()=>toast('Server bilan aloqa yo‘q'));
+    return;
+  }
+  if(a==='userFind'){ findUsers(); return; }
+  if(a==='userPick'){ adjTarget={id,name:b.dataset.name}; setSel(); const r=document.getElementById('u-res'); if(r) r.innerHTML=''; return; }
   if(a==='cancelLot'){
     const k='cl'+id;
     if(!confirmArm[k]){ confirmArm[k]=1; b.textContent='Aniqmi? Yana bosing'; setTimeout(()=>{ delete confirmArm[k]; if(b.isConnected) b.textContent='Lotni bekor qilish'; },3000); return; }
@@ -744,7 +818,7 @@ view.addEventListener('click',e=>{
   if(a==='restore') restore();
   else if(a==='bid') placeBid(id);
   else if(a==='daily') claimDaily();
-  else if(a==='lotToggle'){ lotOpen=!lotOpen; lotImg=''; render(); }
+  else if(a==='lotToggle'){ lotOpen=!lotOpen; render(); }
   else if(a==='redeem') redeem(b.dataset.code||(document.getElementById('promo-in')||{}).value);
   else if(a==='toggleHaptic'){ S.set.haptic=!S.set.haptic; save(); render(); }
   else if(a==='copyRef'){ const i=document.getElementById('ref'); const fb=()=>{ i.select(); toast('Havolani belgilab nusxalang'); };
@@ -814,6 +888,27 @@ function fire(x,y,small){
   for(let k=0;k<(small?4:8);k++){ const a=-Math.PI/2+(Math.random()-.5)*2.4, d=16+Math.random()*34; h+=`<i style="--x:${(Math.cos(a)*d).toFixed(1)}px;--y:${(Math.sin(a)*d).toFixed(1)}px;--d:${Math.random()*90|0}"></i>`; }
   f.innerHTML=h; document.body.appendChild(f); setTimeout(()=>f.remove(),850);
 }
+/* ---------- Admin bergan yoki olgan coin/olmos ---------- */
+let adjBusy=false;
+async function syncAdj(){
+  if(!API_URL||!tgUser||adjBusy) return;
+  adjBusy=true;
+  try{
+    const r=await api('/api/adjustments',{initData:initData()});
+    const list=(r&&r.list)||[]; if(!list.length) return;
+    let dc=0, dg=0; const ids=[];
+    for(const a of list){
+      ids.push(a.id); if(S.u.adjDone[a.id]) continue; S.u.adjDone[a.id]=true;
+      const nc=Math.max(0,S.u.coins+a.c), ng=Math.max(0,S.u.gems+a.g);
+      dc+=nc-S.u.coins; dg+=ng-S.u.gems; S.u.coins=nc; S.u.gems=ng;
+    }
+    save(); updateBar();
+    const ok=await api('/api/adjustments/ack',{initData:initData(),ids});
+    if(ok&&ok.ok){ ids.forEach(i=>delete S.u.adjDone[i]); save(); }
+    if(dc||dg){ toast('Admin: '+(dc?(dc>0?'+':'')+fmt(dc)+' coin ':'')+(dg?(dg>0?'+':'')+fmt(dg)+' olmos':'')); if(tab==='tap'||tab==='shop') render(); }
+  }catch(e){} finally{ adjBusy=false; }
+}
+setInterval(()=>{ syncAdj(); },20000);
 let AC;
 function sword(){
   if(!S.set.sound) return;
@@ -842,7 +937,5 @@ document.getElementById('who').textContent=userName();
 hydrateIcons();
 renderNav();
 render();
-if(API_URL){ syncDown(true); api('/api/me',{initData:initData()}).then(r=>{ serverAdmin=!!r.admin; if(tab==='profile') render(); }).catch(()=>{}); }
+if(API_URL){ syncDown(true); syncAdj(); api('/api/me',{initData:initData()}).then(r=>{ serverAdmin=!!r.admin; adminsCount=r.admins; if(tab==='profile') render(); }).catch(()=>{}); }
 </script>
-
-</body></html>
