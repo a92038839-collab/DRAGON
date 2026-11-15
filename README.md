@@ -53,3 +53,19 @@ Yoki `/newapp` bilan Mini App yarating.
   Auksion takliflari va promokodlar esa serverda tekshiriladi. Balansni ham serverga o'tkazish kerak bo'lsa, buni alohida qilish mumkin.
 - "Botga start" vazifasini Telegram tekshirishga ruxsat bermaydi, u 4 soniya kutish bilan ishlaydi.
 - Fayl ichidagi `DEMO_ADMIN` `false` qilib qo'yilgan, shuning uchun brauzerdan admin panel ochilmaydi.
+
+## 502 Bad Gateway chiqsa
+1. Render → servisingiz → **Logs** bo'limini oching. Xato sababi shu yerda yoziladi.
+2. Ko'p uchraydigan sabablar:
+   - `BOT_TOKEN` Environment'ga kiritilmagan (logda "BOT_TOKEN kiritilmagan" deb chiqadi).
+   - `package.json`, `server.js` yoki `public/index.html` GitHub'ga yuklanmagan. Telefondan papka yuklab bo'lmaydi: `index.html` ni to'g'ridan-to'g'ri repo ildiziga ham qo'ysangiz bo'ladi.
+   - Repo ichida fayllar boshqa papka ichida turibdi (masalan `dragon-coin/server.js`). Render sozlamasida **Root Directory** ni shu papkaga o'zgartiring.
+   - Deploy hali tugamagan: 1-2 daqiqa kuting va sahifani yangilang.
+
+## Yangi imkoniyatlar
+
+- **Promokod rasm bo'lib kanalga tushadi:** Profil → Admin panel → Promokod → miqdorni yozib "Kanalga yuborish". Bot @dragon_pcode kanalga rasm yuboradi. Kod terilib tugagach, o'sha rasm o'rniga ustiga qizil X chizilgan rasm qo'yiladi.
+  Muhim: bot kanalda **admin** bo'lishi va "Xabar yuborish" hamda "Xabarlarni tahrirlash" huquqiga ega bo'lishi kerak.
+- **Foydalanuvchiga coin/olmos berish yoki olish:** Admin panel → Balans → "Foydalanuvchiga coin yoki olmos". ID, @username yoki ism bilan qidiring. Foydalanuvchi ilovani ochganda o'zgarish qo'llanadi.
+- **/start:** bot "Assalomu alaykum! Dragon Coin botiga xush kelibsiz!" xabarini yuboradi.
+- Render'da `PUBLIC_URL`, `BOT_TOKEN`, `ADMIN_IDS` (Telegram ID ingiz) kerak.
